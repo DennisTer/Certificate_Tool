@@ -622,19 +622,25 @@ await saveFolderHandleToStorage(dirHandle);
     certificateData = JSON.parse(contents);
     logToConsole("✅ Loaded existing certificates.json");
   } catch (e) {
-    // File not found, create a new one
-    jsonHandle = await dirHandle.getFileHandle("certificates.json", { create: true });
+    logToConsole(`⚠️ Error loading certificates.json: ${e.message || e}`);
+    console.error(e);
+    if (e.name === "NotFoundError") {
+      // File not found, create a new one
+      jsonHandle = await dirHandle.getFileHandle("certificates.json", { create: true });
 
-    // ✅ Request write permission for new file
-    const filePermission = await jsonHandle.requestPermission({ mode: "readwrite" });
-    if (filePermission !== "granted") {
-      alert("❌ Write permission is required to create certificates.json.");
-      return;
+      // ✅ Request write permission for new file
+      const filePermission = await jsonHandle.requestPermission({ mode: "readwrite" });
+      if (filePermission !== "granted") {
+        alert("❌ Write permission is required to create certificates.json.");
+        return;
+      }
+
+      certificateData = {};
+      logToConsole("📄 Created new certificates.json");
+      document.getElementById("helpModal").style.display = "block";
+    } else {
+      alert("❌ Failed to read certificates.json. Check console for details.");
     }
-
-    certificateData = {};
-    logToConsole("📄 Created new certificates.json");
-    document.getElementById("helpModal").style.display = "block";
   }
 
   logToConsole("📁 Folder selection started...");
