@@ -1,0 +1,1819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon-192.png" />
+  <meta name="theme-color" content="#004080" />
+  <title>Ship Certificates Overview</title>
+  <script src="https://cdn.jsdelivr.net/npm/idb-keyval@3/dist/idb-keyval-iife.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.0/dist/tesseract.min.js"></script>
+  <style>
+    body { font-family: sans-serif; margin: 20px; font-size: 14px; }
+    button { margin: 5px; padding: 10px 15px; font-size: 16px; }
+    progress { width: 100%; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; table-layout: fixed; position: relative; }
+    th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #ddd; }
+    th { background-color: #f0f0f0; position: sticky; top: 0; z-index: 1; }
+    input[type='text'] { padding: 6px; width: 100%; margin-top: 10px; margin-bottom: 10px; }
+    .main-certificate {
+      border-left: 3px solid #2a9d8f;
+      background-color: #f9fdfc;
+    }
+    .toast {
+      visibility: hidden;
+      min-width: 250px;
+      background-color: #333;
+      color: #fff;
+      text-align: center;
+      border-radius: 4px;
+      padding: 12px;
+      position: fixed;
+      z-index: 1;
+      bottom: 30px;
+      right: 30px;
+      font-size: 14px;
+      opacity: 0;
+      transition: opacity 0.5s, visibility 0.5s;
+    }
+    .toast.show {
+      visibility: visible;
+      opacity: 1;
+    }
+    .expired {
+      background-color: #ffe5e5 !important;
+    }
+    .near-expiry {
+      background-color: #fff3cd !important;
+    }
+    .select-certificate {
+  width: 20px;
+  height: 20px;
+  transform: scale(1.3);
+}
+#savePrompt {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  background-color: #333;
+  color: white;
+  padding: 14px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  z-index: 1000;
+  display: none;
+  opacity: 0;
+  transition: opacity 0.5s ease, visibility 0.5s ease;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.25);
+}
+
+#savePrompt.show {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  opacity: 1;
+}
+
+#savePrompt button {
+  background-color: #4caf50;
+  border: none;
+  padding: 6px 12px;
+  color: white;
+  font-weight: bold;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  margin-right: 8px;
+}
+
+#savePrompt button:hover {
+  background-color: #45a049;
+}
+
+</style>
+</head>
+<body>
+  <div style="position:sticky; top:0; background:#fff; z-index:10; padding:4px 0; border-bottom:1px solid #ccc;">
+    <button id="folderButton" style="padding:6px 10px; font-size:13px;">Select Folder</button>
+    <button id="exportButton" style="padding:6px 10px; font-size:13px;">Export ZIP from selected</button>
+    <button id="matchButton" style="padding:6px 10px; font-size:13px;">Match</button>
+    <button id="copyTextButton" style="padding:6px 10px; font-size:13px;">Copy Overview</button>
+    <button id="exportIndexButton" style="padding:6px 10px; font-size:13px;">Export Index</button>
+    <button id="helpButton" style="padding:6px 10px; font-size:13px;">Help</button>
+  </div>
+  <div style="margin: 10px 0;">
+    <label style="margin-right: 20px; font-size: 13px;"><input type="checkbox" id="strictModeToggle"> Strict Match</label>
+    <label style="margin-right: 20px; font-size: 13px;"><input type="checkbox" id="mainOnlyToggle" onchange="localStorage.setItem('mainOnly', this.checked); filterMainOnly();"> Show Only Main</label>
+  </div>
+    <input type="text" id="searchBox" placeholder="Search..." style="padding: 4px; font-size: 13px; width: 200px;">
+  </div>
+  <textarea id="pasteBox" rows="4" style="width:100%; margin-top:10px;" placeholder="Paste certificate list here and press Match..."></textarea>
+  <button id="showAllButton" style="padding:6px 10px; font-size:13px;">Show All / Clear search</button>
+  <progress id="progressBar" value="0" max="100" style="display:none"></progress>
+  <div id="console" style="border:1px solid #ccc; padding:10px; margin-top:20px; max-height:200px; overflow:auto; background:#f9f9f9;"><strong>Console Log:</strong><br></div>
+  <table id="resultTable" style="border-collapse: collapse; width: 100%; table-layout: fixed;">
+    <thead style="position: sticky; top: 38px; background-color: #f0f0f0; z-index: 5;">
+        <th><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)"></th>
+        <th>Open / Filename</th>
+        <th>Date of Issue</th>
+        <th>Date of Expiry</th>
+        <th>Annual Endorsements</th>
+        <th>Certificate Number</th>
+        <th>Issued By</th>
+        <th>Place of Issue</th>
+        <th>Main</th>
+    </thead>
+    <tbody id="certificateBody"></tbody>
+  </table>
+<div id="savePrompt">
+  <strong>Save changes?</strong><br>
+  <button id="confirmSaveBtn">Save</button>
+  <button onclick="document.getElementById('savePrompt').style.display='none';">Cancel</button>
+</div>
+<div id="helpModal" style="display:none; position:fixed; top:10%; left:10%; width:80%; height:80%; background:white; border:1px solid #ccc; padding:20px; z-index:2000; overflow:auto; box-shadow: 0 0 20px rgba(0,0,0,0.3); font-family:sans-serif;">
+  <h2>📘 Instructions – Certificate Tool</h2>
+  <p>This tool is designed to handle administration of ship trading certificates stored in your OneDrive.</p>
+
+  <p><strong>Initial Setup:</strong></p>
+  <p>The first time the tool runs, it scans all your certificates and tries to extract as much information as possible. This takes time, but only needs to happen once. Keep the window open and focused – background tabs may pause scanning.</p>
+
+  <p><strong>After Scanning:</strong></p>
+  <ol>
+    <li><strong>Mark your main trading certificates:</strong><br>
+    Use the “Main” checkbox for key documents. This helps search and match features, and filters out supporting certificates.</li>
+
+    <li><strong>Edit titles to be search-friendly:</strong><br>
+    Titles are extracted from filenames and may be unclear. Use this format for consistent naming:<br>
+    <pre style="background:#f4f4f4; padding:10px;">
+&lt;Cxxx&gt; &lt;Cxxx.xx&gt; &lt;Full Certificate Name&gt; &lt;Aliases / Abbreviations&gt;
+
+Examples:
+C001 C001.00 International Tonnage Certificate ITC69, ITC
+C002 C002.00 Ships Register, Ships Registry, Certificate of Registry
+C007 C007.00 IOPP, International Oil Pollution Prevention Certificate
+    </pre>
+    </li>
+
+    <li><strong>Check and complete all fields:</strong><br>
+    Not all fields can be auto-filled due to technical limits. Review and fill in missing data.</li>
+  </ol>
+
+  <p><strong>Data Storage:</strong></p>
+  <p>All data is saved in <code>certificates.json</code> inside your Certificates folder on OneDrive. Consider backing it up regularly to avoid losing your edits.</p>
+
+  <p><strong>Performance:</strong></p>
+  <p>On future loads, the tool runs fast by reading from the saved file and only rescanning for changes.</p>
+
+  <p><strong>Tool Capabilities:</strong></p>
+  <ul>
+    <li>🔍 Search and filter certificates</li>
+    <li>📋 Paste agent requests and match them to your library</li>
+    <li>📄 Open certificate PDFs directly</li>
+    <li>⏰ Track expired or expiring documents</li>
+    <li>📁 Export a ZIP of selected certificates</li>
+    <li>🧾 Export a human-readable index for hardcopy files</li>
+  </ul>
+
+  <p>Have fun,<br><strong>Dennis Terpstra</strong></p>
+
+  <button onclick="document.getElementById('helpModal').style.display='none'" style="margin-top: 20px;">Close</button>
+</div>
+
+  <script>
+    alert("Please select the folder where all the original certificates are stored. The tool cannot start without it.");
+    const pdfjsLib = window['pdfjs-dist/build/pdf'];
+    document.getElementById("copyTextButton").addEventListener("click", () => {
+  if (!window.latestTextExport) {
+    showToast("No export summary available yet. Perform a match and export first.");
+    return;
+  }
+  navigator.clipboard.writeText(window.latestTextExport)
+    .then(() => showToast("Summary copied to clipboard."))
+    .catch(() => showToast("Failed to copy to clipboard."));
+});
+
+const certificateBundles = {
+  "cargo ship safety": [
+    "safety construction",
+    "safety equipment",
+    "safety radio"
+  ]
+};
+
+function renderRow(path, data) {
+  const row = resultTable.insertRow();
+  row.dataset.path = path;
+
+  const createdAgo = Date.now() - (data.lastModified || 0);
+  if (createdAgo < 1000 * 60 * 60 * 24 * 31) {
+    row.style.borderLeft = "3px solid orange";
+    row.title = "🆕 New certificate (added in the last 31 days)";
+  }
+
+  // ⬅️ First column: Checkbox + Open + Edit
+  const selectCell = row.insertCell();
+  const selectCheckbox = document.createElement('input');
+  selectCheckbox.type = 'checkbox';
+  selectCheckbox.classList.add('select-certificate');
+  selectCell.appendChild(selectCheckbox);
+
+  const openBtn = document.createElement('button');
+  openBtn.textContent = '📄';
+  openBtn.title = 'Open PDF';
+  openBtn.style.marginLeft = '6px';
+  openBtn.style.fontSize = '13px';
+  openBtn.onclick = async () => {
+    const handle = fileHandleMap[path];
+    if (handle) {
+      const file = await handle.getFile();
+      const url = URL.createObjectURL(file);
+      window.open(url, '_blank');
+    }
+  };
+  selectCell.appendChild(openBtn);
+
+  const editBtn = document.createElement("button");
+  editBtn.textContent = "✏️";
+  editBtn.title = "Edit certificate title";
+  editBtn.style.marginLeft = "4px";
+  editBtn.style.fontSize = "13px";
+  selectCell.appendChild(editBtn);
+
+  // 🧠 Generate title text
+  const { group, serial, title } = parseCertificateFilename(path);
+  const displayTitle = data.customTitle || `${group} ${serial} ${title}`;
+
+  // 📄 Second column: File title (no buttons inside here now)
+  const fileCell = row.insertCell();
+  const span = document.createElement("span");
+  span.className = "file-title";
+  span.textContent = displayTitle;
+  span.setAttribute("data-title", displayTitle.toLowerCase());
+  fileCell.appendChild(span);
+
+const certificateSynonyms = {
+  smc: "safety management",
+  doc: "document of compliance",
+  issc: "ship security",
+  iopp: "oil pollution",
+  iapp: "air pollution",
+  ispp: "sewage pollution",
+  ibwmc: "ballast water",
+  illc: "load line",
+  itc: "tonnage",
+  blc: "bunker liability",
+  clc: "civil liability",
+  bcc: "bunker convention",
+  reg: "registry",
+  register: "registry",
+  registry: "register",
+  class: "classification",
+  air: "air pollution",
+  sewage: "sewage pollution",
+  oil: "oil pollution",
+  pollution: "pollution"
+};
+
+const certificateBundles = {
+  "cargo ship safety": [
+    "safety construction",
+    "safety equipment",
+    "safety radio"
+  ]
+};
+
+// Build search metadata
+const baseTitle = displayTitle.toLowerCase();
+const searchTokens = [group, serial, normalizeText(baseTitle)];
+
+// Add both short and long synonyms if either appears in the title
+for (const [key, value] of Object.entries(certificateSynonyms)) {
+  if (baseTitle.includes(value) || baseTitle.includes(key)) {
+    if (!searchTokens.includes(key)) searchTokens.push(key);
+    if (!searchTokens.includes(value)) searchTokens.push(value);
+  }
+}
+
+// Add bundled sub-certificates if the title includes a parent bundle name
+for (const [bundleName, extras] of Object.entries(certificateBundles)) {
+  if (baseTitle.includes(bundleName)) {
+    extras.forEach(extra => {
+      if (!searchTokens.includes(extra)) searchTokens.push(extra);
+    });
+  }
+}
+
+const metadata = normalizeText(searchTokens.join(" "));
+row.setAttribute("data-search", metadata);
+
+// Show matched synonyms (for debugging only)
+const debugSpan = document.createElement("span");
+debugSpan.style.fontSize = "10px";
+debugSpan.style.color = "#999";
+debugSpan.style.display = "block";
+debugSpan.textContent = "🔎 Added tokens: " + searchTokens.filter(t => t !== normalizeText(baseTitle)).join(", ");
+fileCell.appendChild(debugSpan);
+
+
+  // ✏️ Title edit logic (connected to left-side button)
+  const handleEditConfirm = () => {
+    setTimeout(() => {
+      if (!input.isConnected) return;
+      const newTitle = input.value.trim();
+      if (newTitle === span.textContent) {
+        input.replaceWith(span);
+        editBtn.style.display = "inline-block";
+        return;
+      }
+      data.customTitle = newTitle;
+      span.textContent = newTitle;
+      span.setAttribute("data-title", newTitle.toLowerCase());
+      input.replaceWith(span);
+      editBtn.style.display = "inline-block";
+
+      const prompt = document.getElementById("savePrompt");
+prompt.classList.add("show");
+document.getElementById("confirmSaveBtn").onclick = async () => {
+  prompt.classList.remove("show");
+  await saveJSON();
+};
+    }, 0);
+  };
+
+  let input; // Declare it here so handleEditConfirm can see it
+
+editBtn.onclick = () => {
+  input = document.createElement("input");
+  input.type = "text";
+  input.value = span.textContent;
+  input.style.width = "80%";
+  span.replaceWith(input);
+  editBtn.style.display = "none";
+  input.focus();
+  input.onblur = handleEditConfirm;
+  input.onchange = handleEditConfirm;
+};
+
+  // ➡️ Rest of the columns: Input fields
+  const issueCell = row.insertCell();
+  const issueInput = document.createElement('input');
+  issueInput.type = 'text';
+  issueInput.value = data.dateOfIssue || "";
+  issueInput.placeholder = "Check and enter manually";
+  issueInput.oninput = () => {
+  data.dateOfIssue = issueInput.value;
+  showSavePrompt();
+};
+
+  issueCell.appendChild(issueInput);
+
+  const expiryCell = row.insertCell();
+  const expiryInput = document.createElement('input');
+  expiryInput.type = 'text';
+  expiryInput.value = data.dateOfExpiry || "";
+  expiryInput.placeholder = "Check and enter manually";
+  expiryInput.oninput = () => {
+  data.dateOfexpiry = expiryInput.value;
+  showSavePrompt();
+};
+  expiryCell.appendChild(expiryInput);
+
+  const endorsementCell = row.insertCell();
+  const endorsementInput = document.createElement('input');
+  endorsementInput.type = 'text';
+  endorsementInput.value = data.endorsementDates || "";
+  endorsementInput.placeholder = "Check and enter manually";
+  endorsementInput.oninput = () => {
+  data.endorsementDates = endorsementInput.value;
+  showSavePrompt();
+};
+  endorsementCell.appendChild(endorsementInput);
+
+  const certNumCell = row.insertCell();
+  const certNumInput = document.createElement('input');
+  certNumInput.type = 'text';
+  certNumInput.value = data.certificateNumber || "";
+  certNumInput.placeholder = "Check and enter manually";
+  certNumInput.oninput = () => {
+  data.certificateNumber = certNumInput.value;
+  showSavePrompt();
+};
+  certNumCell.appendChild(certNumInput);
+
+  const issuedByCell = row.insertCell();
+  const issuedByInput = document.createElement('input');
+  issuedByInput.type = 'text';
+  issuedByInput.value = data.issuedBy || "";
+  issuedByInput.placeholder = "Check and enter manually";
+  issuedByInput.oninput = () => {
+  data.issuedBy = issuedByInput.value;
+  showSavePrompt();
+};
+  issuedByCell.appendChild(issuedByInput);
+
+  const placeCell = row.insertCell();
+  const placeInput = document.createElement('input');
+  placeInput.type = 'text';
+  placeInput.value = data.placeOfIssue || "";
+  placeInput.placeholder = "Check and enter manually";
+  placeInput.oninput = () => {
+  data.placeOfIssue = placeInput.value;
+  showSavePrompt();
+};
+  placeCell.appendChild(placeInput);
+
+  const mainCell = row.insertCell();
+  const mainCheckbox = document.createElement('input');
+  mainCheckbox.type = 'checkbox';
+  mainCheckbox.checked = data.main || false;
+  if (mainCheckbox.checked) row.classList.add("main-certificate");
+  mainCheckbox.onchange = () => {
+  data.main = mainCheckbox.checked;
+  if (mainCheckbox.checked) {
+    row.classList.add("main-certificate");
+  } else {
+    row.classList.remove("main-certificate");
+  }
+
+  const prompt = document.getElementById("savePrompt");
+  prompt.classList.add("show");
+  document.getElementById("confirmSaveBtn").onclick = async () => {
+    prompt.classList.remove("show");
+    await saveJSON();
+  };
+};
+  mainCell.appendChild(mainCheckbox);
+}
+
+
+function sortCertificateTable() {
+  const rows = Array.from(resultTable.querySelectorAll("tr[data-path]"));
+  rows.sort((a, b) => {
+    const aGroup = parseCertificateFilename(a.dataset.path).group;
+    const bGroup = parseCertificateFilename(b.dataset.path).group;
+    return aGroup.localeCompare(bGroup);
+  });
+  rows.forEach(row => resultTable.appendChild(row));
+}
+
+// Enforce main-only filter on startup
+document.addEventListener("DOMContentLoaded", () => {
+  const mainOnly = localStorage.getItem("mainOnly") === "true";
+  document.getElementById("mainOnlyToggle").checked = mainOnly;
+  Array.from(resultTable.rows).forEach(row => {
+    const isMain = row.classList.contains("main-certificate");
+    row.style.display = mainOnly && !isMain ? "none" : "";
+  });
+});
+    
+    // Load SheetJS for Excel export
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    document.head.appendChild(script);
+
+    const folderButton = document.getElementById("folderButton");
+    const exportButton = document.getElementById("exportButton");
+        const searchBox = document.getElementById("searchBox");
+    const resultTable = document.getElementById("resultTable").querySelector("tbody");
+
+function filterMainOnly() {
+  const mainOnly = document.getElementById("mainOnlyToggle").checked;
+  Array.from(resultTable.rows).forEach(row => {
+    const isMain = row.classList.contains("main-certificate");
+    row.style.display = mainOnly && !isMain ? "none" : "";
+  });
+}
+
+    const progressBar = document.getElementById("progressBar");
+    const consoleDiv = document.getElementById("console");
+    
+
+// Enforce main-only filter after certificates are loaded
+function filterMainOnlyOnStartup() {
+  const mainOnly = localStorage.getItem("mainOnly") === "true";
+  const toggle = document.getElementById("mainOnlyToggle");
+  toggle.checked = mainOnly;
+  const rows = Array.from(resultTable.rows);
+  rows.forEach(row => {
+    const isMain = row.classList.contains("main-certificate");
+    row.style.display = mainOnly && !isMain ? "none" : "";
+  });
+}
+
+function expandWithSynonyms(text) {
+  const certificateSynonyms = {
+  smc: "safety management",
+  doc: "document of compliance",
+  issc: "ship security",
+  iopp: "oil pollution",
+  iapp: "air pollution",
+  ispp: "sewage pollution",
+  ibwmc: "ballast water",
+  illc: "load line",
+  itc: "tonnage",
+  blc: "bunker liability",
+  clc: "civil liability",
+  bcc: "bunker convention",
+  reg: "registry",
+  register: "registry",
+  registry: "register",
+  pollution: "pollution",
+  air: "air pollution",
+  sewage: "sewage pollution",
+  oil: "oil pollution",
+  class: "classification"
+};
+
+
+  const expanded = new Set();
+  const lower = text.toLowerCase();
+
+  // Keep full phrase if matched
+  if (certificateSynonyms[lower]) {
+    expanded.add(lower);
+    expanded.add(certificateSynonyms[lower]);
+  }
+
+  // Split into words and expand
+  const stopWords = new Set([
+  "certificate", "certificaat", "certificat", "cert",
+  "international", "of", "the", "for", "prevention"
+]);
+const words = lower
+  .split(/\s+/)
+  .filter(Boolean)
+  .filter(word => !stopWords.has(word));
+  for (const word of words) {
+    expanded.add(word);
+    if (certificateSynonyms[word]) expanded.add(certificateSynonyms[word]);
+    for (const [abbr, full] of Object.entries(certificateSynonyms)) {
+      if (full.split(/\s+/).includes(word)) expanded.add(abbr);
+    }
+  }
+
+  return Array.from(expanded).join(" ");
+}
+
+
+
+
+
+    function logToConsole(message) {
+  const line = document.createElement("div");
+  line.textContent = message;
+  consoleDiv.appendChild(line);
+  consoleDiv.scrollTop = consoleDiv.scrollHeight;
+    }
+
+    let certificateData = {};
+let fileHandleMap = {};
+let jsonHandle = null;
+    let totalFiles = 0;
+    let processedFiles = 0;
+    let allRows = [];
+let matchedRows = [];
+
+ // Add JSON cleanup and new certificate marking logic
+folderButton.addEventListener("click", async () => {
+  let dirHandle = null;
+
+  //const savedHandle = await loadFolderHandleFromStorage();
+  //if (savedHandle) {
+  //  dirHandle = savedHandle;
+  //} else {
+    // 📁 Must be called directly from user gesture context
+  //  dirHandle = await window.showDirectoryPicker();
+  //  await saveFolderHandleToStorage(dirHandle);
+  //}
+dirHandle = await window.showDirectoryPicker(); // Always ask explicitly
+await saveFolderHandleToStorage(dirHandle);
+
+  // ✅ Ask for permission on the folder itself
+  const folderPermission = await dirHandle.requestPermission({ mode: "readwrite" });
+  if (folderPermission !== "granted") {
+    alert("❌ Write permission to the folder is required.");
+    return;
+  }
+
+  window.directoryHandle = dirHandle;
+  folderHandle = dirHandle;
+
+  try {
+    // Try to open existing certificates.json
+    jsonHandle = await dirHandle.getFileHandle("certificates.json", { create: false });
+
+    // ✅ Ask for file-level permission too
+    const filePermission = await jsonHandle.requestPermission({ mode: "readwrite" });
+    if (filePermission !== "granted") {
+      alert("❌ Write permission is required to continue.");
+      return;
+    }
+
+    const file = await jsonHandle.getFile();
+    const contents = await file.text();
+    certificateData = JSON.parse(contents);
+    logToConsole("✅ Loaded existing certificates.json");
+  } catch (e) {
+    // File not found, create a new one
+    jsonHandle = await dirHandle.getFileHandle("certificates.json", { create: true });
+
+    // ✅ Request write permission for new file
+    const filePermission = await jsonHandle.requestPermission({ mode: "readwrite" });
+    if (filePermission !== "granted") {
+      alert("❌ Write permission is required to create certificates.json.");
+      return;
+    }
+
+    certificateData = {};
+    logToConsole("📄 Created new certificates.json");
+    document.getElementById("helpModal").style.display = "block";
+  }
+
+  logToConsole("📁 Folder selection started...");
+  resultTable.innerHTML = "";
+  allRows = [];
+  processedFiles = 0;
+
+  const fileList = [];
+  const seenPaths = new Set();
+  await collectFiles(dirHandle, "", fileList, seenPaths);
+  logToConsole(`📄 ${fileList.length} new or updated PDF(s) found in folder.`);
+
+  const oldKeys = Object.keys(certificateData);
+  const missing = oldKeys.filter(k => !seenPaths.has(k));
+  if (missing.length > 0) {
+    logToConsole("⚠️ JSON contains old certificates, please clean JSON.");
+    console.warn("Obsolete entries in JSON:", missing);
+  }
+
+  totalFiles = fileList.length;
+  progressBar.style.display = "block";
+  progressBar.value = 0;
+  progressBar.max = totalFiles;
+
+  for (const { file, path } of fileList) {
+    logToConsole(`🔍 Processing: ${path}`);
+    await processPDF(file, path);
+    logToConsole(`✅ Finished: ${path}`);
+    progressBar.value = ++processedFiles;
+  }
+
+  applyExpiryHighlighting();
+  filterMainOnlyOnStartup();
+});
+
+
+
+// Add cleanup button
+const cleanButton = document.createElement("button");
+cleanButton.textContent = "Clean JSON";
+cleanButton.style.padding = "6px 10px";
+cleanButton.style.fontSize = "13px";
+cleanButton.onclick = async () => {
+  const keepPaths = new Set(Object.keys(fileHandleMap));
+  const oldKeys = Object.keys(certificateData);
+  const toDelete = oldKeys.filter(k => !keepPaths.has(k));
+  if (toDelete.length === 0) return alert("No cleanup needed.");
+  if (!confirm(`This will remove ${toDelete.length} old entries from JSON. Proceed?`)) return;
+  toDelete.forEach(k => delete certificateData[k]);
+  if (jsonHandle) {
+    const writable = await jsonHandle.createWritable({ keepExistingData: true });
+    await writable.write(JSON.stringify(certificateData, null, 2));
+    await writable.close();
+  }
+  showToast("Old entries removed from JSON.");
+  logToConsole("🧹 JSON cleaned of obsolete entries.");
+};
+document.querySelector("#folderButton").insertAdjacentElement("afterend", cleanButton);
+
+
+matchButton.addEventListener("click", () => {
+  const pasted = pasteBox.value.trim();
+  if (!pasted) return;
+
+  const lines = pasted.split(/\n/).map(l => l.trim()).filter(Boolean);
+  const mainOnly = document.getElementById("mainOnlyToggle").checked;
+
+  const rows = Array.from(resultTable.querySelectorAll("tr")).filter(row => {
+    return !mainOnly || row.classList.contains("main-certificate");
+  });
+
+  const strictMode = document.getElementById("strictModeToggle").checked;
+
+  const avgLength = lines.reduce((sum, l) => sum + l.length, 0) / lines.length || 0;
+  const dynamicThreshold = strictMode
+    ? 0.3
+    : avgLength <= 3 ? 0.3 : avgLength < 8 ? 0.45 : 0.6;
+
+  const fuseOptions = {
+    keys: [
+      {
+        name: 'group',
+        getFn: row => normalizeText(parseCertificateFilename(row.cells[1]?.textContent || '').group),
+        weight: 0.3
+      },
+      {
+        name: 'serial',
+        getFn: row => normalizeText(parseCertificateFilename(row.cells[1]?.textContent || '').serial),
+        weight: 0.3
+      },
+      {
+        name: 'metadata',
+        getFn: row => row.getAttribute("data-search") || '',
+        weight: 1.5
+      }
+    ],
+    includeScore: true,
+    threshold: dynamicThreshold,
+    ignoreLocation: true
+  };
+
+  const fuse = new Fuse(rows, fuseOptions);
+  const matchedSet = new Set();
+  const seen = new Set();
+
+  lines.forEach(line => {
+    const lowerLine = line.toLowerCase();
+    const expanded = expandWithSynonyms(line);
+    const combined = normalizeText(`${line} ${expanded}`);
+
+    console.log("Searching for:", combined);
+    const results = fuse.search(combined);
+    const scoreLimit = 0.82;
+
+    results.slice(0, 3).forEach(result => {
+      const row = result.item;
+      const title = row.querySelector(".file-title")?.textContent || '';
+      const parsed = parseCertificateFilename(title);
+      const group = parsed.group?.toLowerCase() || '';
+      const serial = parsed.serial?.toLowerCase() || '';
+      const scoreBoosted = (combined.includes(group) || combined.includes(serial));
+
+      if (scoreBoosted) {
+        result.score *= 0.5;
+        console.log(`Boosted match for group/serial: ${group}/${serial}`);
+      }
+
+      const score = result.score || 1;
+      console.log(`Match: "${title}", Score: ${score.toFixed(3)}`);
+
+      if (score > scoreLimit || seen.has(row)) return;
+
+      // Noise filtering
+      const t = title.toLowerCase();
+      if ((t.includes("crane") || t.includes("lifting") || t.includes("gear")) &&
+          !(lowerLine.includes("crane") || lowerLine.includes("lifting") || lowerLine.includes("gear")))
+        return;
+
+      if ((t.includes("insurance") || t.includes("liability") || t.includes("wreck")) &&
+          !(lowerLine.includes("insurance") || lowerLine.includes("liability") || lowerLine.includes("wreck")))
+        return;
+
+      if ((t.includes("energy efficiency") || t.includes("iee")) &&
+          !(lowerLine.includes("energy") || lowerLine.includes("efficiency")))
+        return;
+
+      if (t.includes("exemption") && t.includes("safety") &&
+          !(lowerLine.includes("equipment") || lowerLine.includes("radio") || lowerLine.includes("construction")))
+        return;
+
+      // ✅ Accept match
+      matchedSet.add(row);
+      seen.add(row);
+      const checkbox = row.querySelector(".select-certificate");
+      if (checkbox) checkbox.checked = true;
+    });
+  });
+
+  // Highlight matched rows
+  rows.forEach(row => {
+    row.style.backgroundColor = matchedSet.has(row) ? "#e1ffe1" : "";
+  });
+
+  showToast(`🔍 Matched ${matchedSet.size} certificates.`);
+});
+
+
+
+
+
+
+  exportButton.addEventListener("click", async () => {
+  const useZip = confirm("Do you want to export as a single ZIP file? Click 'Cancel' for separate PDF downloads.");
+  logToConsole("📦 Export started...");
+  const selectedRows = Array.from(resultTable.rows).filter(row =>
+    row.querySelector(".select-certificate")?.checked
+  );
+
+  if (selectedRows.length === 0) {
+    showToast("No certificates selected for export.");
+    return;
+  }
+
+  if (!useZip) {
+    // Separate downloads instead of ZIP
+    for (const row of selectedRows) {
+      const pathText = row.dataset.path;
+      const fileKey = pathText.trim();
+      if (!fileKey || !fileHandleMap[fileKey]) continue;
+      try {
+        const file = await fileHandleMap[fileKey].getFile();
+        const arrayBuffer = await file.arrayBuffer();
+        const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
+        const newPdf = await PDFLib.PDFDocument.create();
+        const copiedPages = await newPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
+        copiedPages.forEach(page => newPdf.addPage(page));
+        let compressed;
+      try {
+        compressed = await newPdf.save({ useObjectStreams: true });
+        if (compressed.byteLength < 5000) throw new Error("Compressed PDF is suspiciously small");
+      } catch (compressionError) {
+        logToConsole(`⚠️ Using original PDF for: ${fileKey} due to: ${compressionError.message}`);
+        compressed = arrayBuffer;
+      }
+        const filename = fileKey.split("/").pop();
+        const blob = new Blob([compressed], { type: "application/pdf" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+      } catch (err) {
+        logToConsole(`❌ Error compressing ${fileKey}: ${err.message}`);
+      }
+    }
+    showToast("Export complete: individual files downloaded.");
+    return;
+  }
+
+  const zip = new JSZip();
+  const wsData = [["Filename", "Date of Issue", "Date of Expiry", "Annual Endorsements", "Certificate Number", "Issued By", "Place of Issue"]];
+  let skipped = 0;
+
+    for (const row of selectedRows) {
+    const pathText = row.dataset.path;
+    
+    
+    const fileKey = pathText.trim();
+    if (!fileKey || !fileHandleMap[fileKey]) {
+      logToConsole(`❌ Skipped: File key not found for path: ${pathText}`);
+      skipped++;
+      continue;
+    }
+    try {
+      
+      const file = await fileHandleMap[fileKey].getFile();
+      const arrayBuffer = await file.arrayBuffer();
+      
+const compressed = arrayBuffer;
+      const filename = fileKey.split("/").pop();
+      logToConsole(`🧪 Adding to ZIP: ${filename} (raw size: ${compressed.length} bytes)`);
+      zip.file(filename, compressed);
+      logToConsole(`✅ Added to ZIP: ${filename} (${compressed.length} bytes)`);
+
+      const cells = row.querySelectorAll("td");
+      wsData.push([
+        filename,
+        cells[2]?.querySelector("input")?.value || "",
+        cells[3]?.querySelector("input")?.value || "",
+        cells[4]?.querySelector("input")?.value || "",
+        cells[5]?.querySelector("input")?.value || "",
+        cells[6]?.querySelector("input")?.value || "",
+        cells[7]?.querySelector("input")?.value || ""
+      ]);
+    } catch (error) {
+      logToConsole(`❌ Error compressing ${fileKey}: ${error.message}`);
+      skipped++;
+    }
+  }
+
+  const textExport = wsData.slice(1).map(r => {
+  const filename = r[0] || "";
+
+  // Find matching full path in certificateData
+  const path = Object.keys(certificateData).find(k => k.endsWith(filename));
+  const data = certificateData[path] || {};
+  const title = getCertificateTitle(path || filename, data);
+
+  return `Title            : ${title}
+Date of Issue    : ${r[1]}
+Date of Expiry   : ${r[2]}
+Endorsements     : ${r[3]}
+Certificate No.  : ${r[4]}
+Issued By        : ${r[5]}
+Place of Issue   : ${r[6]}`;
+}).join("\n----------------------------\n\n");
+
+  window.latestTextExport = textExport;
+  zip.file("Certificate_Details.txt", textExport);
+
+  logToConsole("📦 Generating ZIP archive...");
+  let zipParts = [];
+  let currentZip = new JSZip();
+  let currentSize = 0;
+
+  for (const file of Object.values(zip.files)) {
+    const content = await file.async("uint8array");
+    if (currentSize + content.length > 10 * 1024 * 1024) {
+      zipParts.push(await currentZip.generateAsync({ type: "blob" }));
+      currentZip = new JSZip();
+      currentSize = 0;
+    }
+    currentZip.file(file.name, content);
+    currentSize += content.length;
+  }
+  if (Object.keys(currentZip.files).length > 0) {
+    zipParts.push(await currentZip.generateAsync({ type: "blob" }));
+  }
+
+  zipParts.forEach((blob, i) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `Certificates_Part${i + 1}.zip`;
+    a.click();
+  });
+
+  showToast(`Export ready. ${skipped > 0 ? skipped + ' file(s) skipped.' : 'All files included.'}`);
+});
+
+    
+
+  // Improved live search logic for searchBox.addEventListener("input")
+searchBox.addEventListener("input", () => {
+  const rawInput = searchBox.value.trim().toLowerCase();
+  const expandedQuery = expandWithSynonyms(rawInput);
+  const terms = [rawInput, ...expandedQuery.split(/\s+/).filter(Boolean)];
+  const mainOnly = document.getElementById("mainOnlyToggle").checked;
+  const strictMode = document.getElementById("strictModeToggle").checked;
+  const avgLength = terms.reduce((sum, t) => sum + t.length, 0) / terms.length || 0;
+const dynamicThreshold = strictMode
+  ? 0.3
+  : avgLength <= 3 ? 0.3 : avgLength < 8 ? 0.45 : 0.6;
+  
+
+  const rows = Array.from(resultTable.querySelectorAll("tr")).filter(row => {
+    return !mainOnly || row.classList.contains("main-certificate");
+  });
+
+const fuseOptions = {
+  keys: [
+    {
+      name: 'group',
+      getFn: row => normalizeText(parseCertificateFilename(row.cells[1]?.textContent || '').group),
+      weight: 0.3
+    },
+    {
+      name: 'serial',
+      getFn: row => normalizeText(parseCertificateFilename(row.cells[1]?.textContent || '').serial),
+      weight: 0.3
+    },
+    {
+  name: 'metadata',
+  getFn: row => row.getAttribute("data-search") || '',
+  weight: 1.5
+}
+  ],
+  includeScore: true,
+  threshold: dynamicThreshold,
+  ignoreLocation: true
+};
+
+
+  const fuse = new Fuse(rows, fuseOptions);
+  const scoredResults = terms.flatMap(term => fuse.search(term));
+
+  const phrase = rawInput.toLowerCase();
+  const seen = new Set();
+  let sortedMatches = scoredResults
+    .filter(r => {
+      if (seen.has(r.item)) return false;
+      seen.add(r.item);
+      return true;
+    })
+    .sort((a, b) => a.score - b.score);
+
+  // Manually boost exact phrase matches
+  rows.forEach(row => {
+    const title = row.querySelector(".file-title")?.getAttribute("data-title")?.toLowerCase() || '';
+    if (title.includes(phrase) && !seen.has(row)) {
+      sortedMatches.unshift({ item: row, score: 0.01 });
+      seen.add(row);
+    }
+  });
+
+  const matchedRowsSet = new Set(sortedMatches.map(r => r.item));
+  const topMatch = sortedMatches[0]?.item || null;
+
+  rows.forEach(row => {
+    row.style.display = "none";
+    row.style.backgroundColor = "";
+  });
+
+  sortedMatches.forEach(({ item }, index) => {
+    item.style.display = "";
+    item.style.backgroundColor = index === 0 ? '#b1e0ff' : '#e8f0fe';
+    resultTable.appendChild(item);
+    const titleSpan = item.querySelector(".file-title");
+    if (titleSpan) {
+      const rawTitle = titleSpan.getAttribute("data-title") || titleSpan.textContent;
+      let highlighted = rawTitle;
+      terms.forEach(term => {
+        const regex = new RegExp(`(${term})`, 'gi');
+        highlighted = highlighted.replace(regex, '<mark>$1</mark>');
+      });
+      titleSpan.innerHTML = highlighted;
+    }
+  });
+});
+
+
+function fuzzyMatchScore(a, b) {
+  if (!a || !b) return 0;
+  a = expandWithSynonyms(a);
+  b = expandWithSynonyms(b);
+  if (b.includes(a)) return 1;
+  let matches = 0;
+  for (let i = 0; i < a.length; i++) {
+    if (b.includes(a[i])) matches++;
+  }
+  return matches / a.length;
+}
+
+function refinedSimilarityScore(a, b) {
+  const aTerms = a.toLowerCase().split(/\s+/).filter(Boolean);
+  const bTerms = b.toLowerCase().split(/\s+/).filter(Boolean);
+  let matchCount = 0;
+  for (const term of aTerms) {
+    if (bTerms.includes(term)) matchCount++;
+  }
+  return aTerms.length ? matchCount / aTerms.length : 0;
+}
+
+
+
+
+  async function collectFiles(directoryHandle, path, fileList, seenPaths = new Set()) {
+  for await (const entry of directoryHandle.values()) {
+    const entryPath = path + "/" + entry.name;
+
+    if (entry.kind === "file" && entry.name.toLowerCase().endsWith(".pdf")) {
+      let file;
+      try {
+        file = await entry.getFile();
+      } catch (error) {
+        logToConsole(`⚠️ Skipping inaccessible file: ${entry.name}`);
+        continue;
+      }
+
+      fileHandleMap[entryPath] = entry;
+      seenPaths.add(entryPath);
+      const existing = certificateData[entryPath];
+      const isNewOrModified = !existing || existing.lastModified !== file.lastModified;
+
+      if (isNewOrModified) {
+        fileList.push({ file, path: entryPath }); // defer processing to main loop
+      } else {
+        await processPDF(file, entryPath); // re-render from cache
+      }
+    } else if (entry.kind === "directory") {
+      await collectFiles(entry, entryPath, fileList, seenPaths);
+    }
+  }
+}
+
+
+async function performOCR(pdf) {
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+      let ocrText = "";
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale: 3.5 });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: context, viewport }).promise;
+
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+          const val = avg > 150 ? 255 : 0;
+          data[i] = data[i + 1] = data[i + 2] = val;
+        }
+        context.putImageData(imageData, 0, 0);
+
+        const dataUrl = canvas.toDataURL();
+        let result = await Tesseract.recognize(dataUrl, 'eng', {
+  tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:/.- '
+});
+if ((result.data.text || '').trim().length < 20) {
+  console.log("🔁 Retry with Dutch (nl) fallback...");
+  result = await Tesseract.recognize(dataUrl, 'nld', {
+  langPath: 'https://tessdata.projectnaptha.com/4.0.0',
+  logger: m => console.log(m),
+  tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:/.- '
+});
+}
+console.log("📄 OCR Result Page " + i + ":" + result.data.text);
+        ocrText += result.data.text + "\n";
+      }
+
+      return ocrText;
+    }
+
+  function normalizeDate(input) {
+  const months = {
+    jan: '01', january: '01',
+    feb: '02', february: '02',
+    mar: '03', march: '03',
+    apr: '04', april: '04',
+    may: '05',
+    jun: '06', june: '06',
+    jul: '07', july: '07',
+    aug: '08', august: '08',
+    sep: '09', september: '09',
+    oct: '10', october: '10',
+    nov: '11', november: '11',
+    dec: '12', december: '12'
+  };
+
+  // Remove ordinal suffixes like 20th, 3rd
+  input = input.toLowerCase().replace(/(\d+)(st|nd|rd|th)/g, '$1');
+
+  const parts = input.match(/(\d{1,2})[\s\-\/\.]?([a-z]+|\d{1,2})[\s\-\/\.]?(\d{2,4})/i);
+  if (!parts) return input; // fallback
+
+  let [, day, month, year] = parts;
+
+  if (months[month]) month = months[month];
+  else if (parseInt(month) < 10) month = ('0' + month).slice(-2);
+
+  if (parseInt(day) < 10) day = ('0' + day).slice(-2);
+  if (year.length === 2) year = '20' + year;
+
+  return `${day}-${month}-${year}`;
+}
+
+// Update to use Tesseract.js as a fallback if PDF.js extraction fails
+async function processPDF(file, displayName) {
+  if (certificateData[displayName] && certificateData[displayName].lastModified === file.lastModified) {
+    renderRow(displayName, certificateData[displayName]);
+    return;
+  }
+
+  let pdf;
+  try {
+    pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  } catch (e) {
+    logToConsole(`❌ Failed to load PDF: ${displayName}`);
+    return;
+  }
+
+  let fullText = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const strings = content.items.map(item => item.str);
+    const pageText = strings.join(" ");
+    const lines = pageText.split(/(?<=[a-z0-9])\s{2,}(?=[A-Z])/g);
+    fullText += lines.join("\n") + "\n";
+
+    if (i === pdf.numPages) {
+      console.log(`📄 Extracted text layer (structured) for: ${displayName}\n`, fullText);
+    }
+  }
+
+  let usedOCR = false;
+  if (fullText.trim().length < 100) {
+    logToConsole(`🔍 PDF text layer empty, using OCR fallback for: ${displayName}`);
+    try {
+      fullText = await performOCR(pdf);
+      if (fullText.trim().length < 20) {
+        logToConsole(`❌ OCR produced no readable text: ${displayName}`);
+      }
+      usedOCR = true;
+    } catch (err) {
+      logToConsole(`❌ OCR failed: ${displayName}`);
+      certificateData[displayName] = {
+        lastModified: file.lastModified,
+        dateOfIssue: "",
+        dateOfExpiry: "",
+        endorsementDates: "",
+        certificateNumber: "",
+        issuedBy: "",
+        placeOfIssue: ""
+      };
+      if (jsonHandle) {
+        const writable = await jsonHandle.createWritable({ keepExistingData: true });
+        await writable.write(JSON.stringify(certificateData, null, 2));
+        await writable.close();
+      }
+      renderRow(displayName, certificateData[displayName]);
+      return;
+    }
+  }
+
+  fullText = fullText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ');
+
+  const endorsementMatches = Array.from(fullText.matchAll(/(?:endorsement|survey)[\s\S]{0,60}?\b(on|dated)?\b[\s:]*?(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})/gi));
+  console.log("🧾 Scanning for cert number in text snippet:");
+  console.log(fullText.slice(0, 1000));
+
+  const fuzzyTerms = [
+    "certificate no", "certificate number", "certificaat no", "certificaatnummer", "license number",
+    "id number", "schema no", "report no", "record no", "statement no", "insurance policy reference",
+    "certificate identity number", "certification no", "document no"
+  ];
+
+  const fuzzy = new Fuse(fullText.split(/[.?!;\n]+/), {
+    includeScore: true,
+    threshold: 0.4,
+    useExtendedSearch: true,
+  });
+
+  let fuzzyResults = [];
+  for (const term of fuzzyTerms) {
+    const results = fuzzy.search(term);
+    if (results.length > 0) {
+      fuzzyResults.push(...results);
+    }
+  }
+
+  if (fuzzyResults.length > 0) {
+    fuzzyResults = fuzzyResults.sort((a, b) => a.score - b.score);
+    console.log("🔍 Fuse.js fuzzy matches:", fuzzyResults.slice(0, 3));
+  }
+
+  const certNumberMatches = Array.from(
+    fullText.matchAll(
+      /(?:\bCertificate\s*No\s*[:.]?|\bCertificaat\s*no\s*[:.]?|\bCertificaatnummer\s*[:.]?|\bLicense\s*number\s*[:.]?|\bCertificate\s*number\s*[:.]?|\bId\s*number\s*[:.]?|\bLICENSE\s*NUMBER\s*[:.]?|\bSchema\s*no\s*[:.]?|\bReport\s*no\s*[:.]?|\bRecord\s*no\s*[:.]?|\bStatement\s*no\s*[:.]?|\bCERTIFICATE\s*NO\s*[:.]?|\bNo\s*[:.]?|\bInsurance\s*policy\s*reference\s*[:.]?|\bCertificate\s*identity\s*number\s*[:.]?|\bCertification\s*No\s*[:.]?|\bDocument\s*no\s*[:.]?)\s*((?:[A-Z]{2,5}[ \-]?\d{2,5}(?:[.\-]\d{2,5})*(?:-[A-Z])?)|(?:\d{6,}))/gi
+    )
+  );
+
+  console.log("🔍 Certificate label matches:", certNumberMatches.map(m => m[0]));
+  certNumberMatches.forEach(m => console.log("📌 Raw cert number match:", m));
+
+  let certificateNumber = "";
+
+  if (certNumberMatches.length > 0) {
+    certificateNumber = certNumberMatches
+      .map(m => m.find((g, i) => i > 0 && g))
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length)[0];
+  }
+
+  if (!certificateNumber && fuzzyResults.length > 0) {
+    for (const result of fuzzyResults) {
+      const match = result.item.match(/\b(?:[A-Z]{2,5}[ \-]?\d{4,10}(?:[.\-]?\d{1,4})*(?:-[A-Z])?|\d{6,})\b/);
+      if (match && match[0].length >= 6) {
+        certificateNumber = match[0].trim();
+        console.log("🧠 Fuzzy fallback cert number:", certificateNumber);
+        break;
+      }
+    }
+  }
+
+  if (!certificateNumber) {
+    const fallback = fullText.match(/[A-Z]{2,5}[ \-]?\d{4,10}(?:[.\-]?\d{1,4})*(?:-[A-Z])?/);
+    if (fallback) {
+      certificateNumber = fallback[0].trim();
+      console.log("⚠️ Fallback certificate number:", certificateNumber);
+    } else {
+      console.log("❌ No certificate number found.");
+    }
+  }
+if (certificateNumber) {
+  const certIndex = fullText.indexOf(certificateNumber);
+  if (certIndex !== -1) {
+    const after = fullText.slice(certIndex + certificateNumber.length);
+    const slashSuffix = after.match(/^\/[^\s\n\r]+/); // grab /XYZ up to first whitespace
+    if (slashSuffix) {
+      certificateNumber += slashSuffix[0];
+      console.log("🔗 Extended cert number with suffix:", certificateNumber);
+    }
+  }
+}
+  let issuedBy = "";
+
+// List of common certificate issuers
+const knownIssuers = [
+  "Lloyds",
+  "Lloyd's Register",
+  "DNV",
+  "Shipping Inspectorate",
+  "Goverment of the Netherlands",
+  "Alphatron",
+  "Technisch bureau Uitenbogaart",
+  "Gard AS Arendal",
+  "Gard AS",
+  "Anchor Insurance",
+  "LRQA Limited",
+  "Ministerie van Infrastructuur en Waterstaat",
+  "LRQA Nederland B.V.",
+  "US Coast Guard",
+  "Netherlands Shipping Inspectorate",
+  "Kiwa Oesterbaai",
+  "KIWA"
+];
+
+// Split fullText more effectively
+const textChunks = fullText.split(/(?<=\b(?:by|door|limited|issued|register|inspectorate))[\s.,;:]+/i)
+  .flatMap(chunk => chunk.split(/[\n\r]+/))
+  .map(c => c.trim())
+  .filter(c => c.length > 5);
+
+// Fuzzy search using normal mode (not strict match)
+const fuseIssuer = new Fuse(textChunks, {
+  includeScore: true,
+  threshold: 0.3,
+  useExtendedSearch: false
+});
+
+const issuerMatches = knownIssuers.flatMap(issuer => fuseIssuer.search(issuer));
+issuerMatches.sort((a, b) => a.score - b.score);
+console.log("🔎 Top fuzzy matches:", issuerMatches.slice(0, 3));
+
+if (issuerMatches.length > 0) {
+  const bestMatch = issuerMatches[0];
+  issuedBy = knownIssuers.find(name =>
+    bestMatch.item.toLowerCase().includes(name.toLowerCase())
+  ) || bestMatch.item;
+
+  console.log("🔍 Fuzzy issuer match:", bestMatch.item);
+  console.log("✅ Assigned Issuer:", issuedBy);
+} else {
+  console.log("⚠️ No fuzzy match found, trying regex fallback for issuer.");
+  const issuedByMatch = fullText.match(/(?:issued by|signed by|published by|provided by|afgegeven door|uitgegeven door)[\s:]*([^\n\r,.]{3,100})/i);
+  if (issuedByMatch) {
+    let candidate = issuedByMatch[1].trim();
+    candidate = candidate.split(/\b(on|at|dated|op|te|port|date|rotterdam|survey|place|issue|issued)\b/i)[0].trim();
+    candidate = candidate.replace(/[^a-zA-Z\s\-]+$/, "").trim();
+    const words = candidate.split(/\s+/).slice(0, 5);
+    issuedBy = words.join(" ").trim();
+    console.log("✅ Fallback Extracted Issuer:", issuedBy);
+  }
+}
+
+
+  const placeMatch = fullText.match(/(?:place of issue|issued at|afgegeven te|uitgegeven te)[\s:]*([^\n]+)/i);
+  let placeOfIssue = "";
+  if (placeMatch) {
+  let raw = placeMatch[1].trim();
+
+  // 1️⃣ Cut off at common continuation words (like 'on', 'issued', etc.)
+  raw = raw.split(/\s+\b(on|op|signed|by|port|date|survey|rotterdam|issue|issued)\b/i)[0].trim();
+
+  // 2️⃣ Strip unwanted characters (letters, spaces and hyphens only)
+  raw = raw.replace(/[^a-zA-Z\s\-]/g, '');
+
+  // 3️⃣ Limit to 3 words max
+  const words = raw.split(/\s+/).filter(Boolean).slice(0, 3);
+  placeOfIssue = words.join(' ').trim();
+
+  console.log("📍 Cleaned Place of Issue:", placeOfIssue);
+}
+
+  let dateOfIssue = "";
+  let dateOfExpiry = "";
+  const lowerText = fullText.toLowerCase();
+  const foundDates = Array.from(fullText.matchAll(/\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}/g));
+  console.log("🕵️ Dates found in document:", foundDates.map(m => m[0]));
+
+  function isValidDate(str) {
+    const clean = normalizeDate(str);
+    const [d, m, y] = clean.split("-");
+    const date = new Date(`${y}-${m}-${d}`);
+    return !isNaN(date) && parseInt(d) <= 31 && parseInt(m) <= 12 && parseInt(y) >= 1900 && parseInt(y) <= 2100;
+  }
+
+  for (const match of foundDates) {
+    const rawDate = match[0];
+    if (!isValidDate(rawDate)) {
+      console.log(`❌ Skipping invalid date format: ${rawDate}`);
+      continue;
+    }
+
+    const index = match.index || 0;
+    const context = lowerText.slice(Math.max(0, index - 80), index).replace(/\s+/g, ' ');
+    console.log(`📍 Found date: ${rawDate} — Context (before): "${context}"`);
+
+    const normalized = normalizeDate(rawDate);
+
+    const expiryContext = /\b(valid\s+until|expires|verloopt|expiry|until|expire\s+on|will\s+expire)\b/;
+    const issueContext = /\b(issued|afgegeven|valid\s+from|valid\s+form|rotterdam|signed|licence\s+is\s+valid\s+from)\b/;
+
+    if (!dateOfExpiry && expiryContext.test(context)) {
+      dateOfExpiry = normalized;
+      console.log(`✅ Assigned Date of Expiry: ${dateOfExpiry}`);
+      continue;
+    }
+
+    if (!dateOfIssue && issueContext.test(context)) {
+      if (normalized !== dateOfExpiry) {
+        dateOfIssue = normalized;
+        console.log(`✅ Assigned Date of Issue: ${dateOfIssue}`);
+      }
+      continue;
+    }
+
+    console.log(`ℹ️ Unclassified date: ${rawDate} — no matching label found nearby.`);
+  }
+
+  const endorsementDates = endorsementMatches.map(m => isValidDate(m[2]) ? normalizeDate(m[2]) : "").filter(Boolean).join(", ");
+
+  certificateData[displayName] = {
+    lastModified: file.lastModified,
+    dateOfIssue,
+    dateOfExpiry,
+    endorsementDates,
+    certificateNumber,
+    issuedBy,
+    placeOfIssue
+  };
+
+  if (jsonHandle) {
+    const writable = await jsonHandle.createWritable({ keepExistingData: true });
+    await writable.write(JSON.stringify(certificateData, null, 2));
+    await writable.close();
+  }
+
+  renderRow(displayName, certificateData[displayName]);
+  if (usedOCR) logToConsole(`📷 OCR content used for ${displayName}`);
+  sortCertificateTable();
+}
+function showToast(message) {
+  const toast = document.getElementById("toast");
+  toast.textContent = message;
+  toast.className = "toast show";
+  setTimeout(() => {
+    toast.className = toast.className.replace("show", "");
+  }, 3000);
+}
+function parseCertificateFilename(path) {
+  try {
+    const cleanedPath = path.replace(/^.*?Class & Statutory[\\/]/i, '');
+    const filename = cleanedPath.split('/').pop();
+    const folders = cleanedPath.split('/');
+    const parentFolder = folders.length >= 2 ? folders[folders.length - 2] : '';
+
+    // Extract from filename
+    const groupMatch = path.match(/(C\d{3})/i);
+    const serialMatch = path.match(/(C\d{3}\.\d{2})/i);
+
+    let parts = filename.replace(/class\s*&\s*statutory/i, '')
+      .replace(/[.]/g, '')
+      .replace(/\d{6,}/g, '')
+      .replace(/[_]+/g, ' ')
+      .replace(/\s*pdf$/i, '')
+      .trim();
+
+    // Fallback: Use folder name
+    const fallbackGroupMatch = parentFolder.match(/(C\d{3})/i);
+    const fallbackTitle = parentFolder.replace(/C\d{3}/i, '').trim();
+
+    const group = groupMatch ? groupMatch[1] :
+                  fallbackGroupMatch ? fallbackGroupMatch[1] : '[No Group]';
+
+    const serial = serialMatch ? serialMatch[1] : '';
+    const title = parts || fallbackTitle || '[Untitled]';
+
+    // Logging
+    if (!groupMatch && fallbackGroupMatch) {
+      logToConsole(`ℹ️ Used folder fallback due to wrong filename for group in: ${path}`);
+    }
+    if (!groupMatch && !fallbackGroupMatch) {
+      logToConsole(`⚠️ No group detected in due to wrong filename: ${path}`);
+    }
+    if (!parts && fallbackTitle) {
+      logToConsole(`ℹ️ Used folder fallback for title due to wrong filename in: ${path}`);
+    }
+
+    return { group, serial, title };
+  } catch (e) {
+    logToConsole(`❌ parseCertificateFilename error for ${path}: ${e.message}`);
+    return { group: '[Parse Error]', serial: '', title: path };
+  }
+}
+
+
+function selectAllCertificates() {
+  document.querySelectorAll(".select-certificate").forEach(cb => cb.checked = true);
+}
+
+function deselectAllCertificates() {
+  document.querySelectorAll(".select-certificate").forEach(cb => cb.checked = false);
+}
+
+function toggleSelectAll(masterCheckbox) {
+  const checkboxes = document.querySelectorAll('.select-certificate');
+  let count = 0;
+  checkboxes.forEach(cb => {
+    cb.checked = masterCheckbox.checked;
+    if (masterCheckbox.checked) count++;
+  });
+  showToast(masterCheckbox.checked ? `${count} certificate(s) selected.` : `All selections cleared.`);
+}
+
+// Highlight expiration rows
+    function applyExpiryHighlighting() {
+  const today = new Date();
+  const inThreeMonths = new Date();
+  inThreeMonths.setMonth(today.getMonth() + 3);
+
+  document.querySelectorAll("tr[data-path]").forEach(row => {
+    const expiryInput = row.cells[3]?.querySelector('input');
+    if (!expiryInput) return;
+
+    const expiryText = expiryInput.value.trim();
+    if (!expiryText || expiryText.toLowerCase().includes("no expiry")) return;
+
+    const [day, month, year] = expiryText.split("-");
+    const expiryDate = new Date(`${year}-${month}-${day}`);
+    if (isNaN(expiryDate)) return;
+
+    row.classList.remove("expired", "near-expiry");
+    if (expiryDate < today) row.classList.add("expired");
+    else if (expiryDate < inThreeMonths) row.classList.add("near-expiry");
+  });
+}
+document.getElementById("exportIndexButton").addEventListener("click", () => {
+  const rows = Array.from(document.querySelectorAll("tr[data-path]"));
+  const grouped = {};
+
+  for (const row of rows) {
+    const path = row.dataset.path;
+    const data = certificateData[path];
+    const parsed = parseCertificateFilename(path);
+    if (!grouped[parsed.group]) grouped[parsed.group] = [];
+    grouped[parsed.group].push({
+      isMain: row.classList.contains("main-certificate"),
+      C: parsed.group,
+      Title: data.customTitle || parsed.title,
+      Issue: data.dateOfIssue || "",
+      Expiry: data.dateOfExpiry || "",
+      Endorsements: data.endorsementDates || "",
+      Number: data.certificateNumber || "",
+      IssuedBy: data.issuedBy || "",
+      Place: data.placeOfIssue || ""
+    });
+  }
+
+  const sortedGroups = Object.entries(grouped).sort((a, b) => a[0].localeCompare(b[0]));
+  const tableBody = [['C-number', 'Title', 'Certificate No.', 'Issue Date', 'Expiry Date', 'Endorsements']];
+
+  for (const [group, entries] of sortedGroups) {
+    const mains = entries.filter(e => e.isMain);
+    const supports = entries.filter(e => !e.isMain);
+
+    for (const entry of mains) {
+      tableBody.push([
+        entry.C, entry.Title, entry.Number, entry.Issue, entry.Expiry, entry.Endorsements
+      ]);
+    }
+    for (const entry of supports) {
+      tableBody.push([
+        { text: entry.C, fontSize: 9, margin: [10, 0, 0, 0] },
+        { text: entry.Title, fontSize: 9 },
+        { text: entry.Number, fontSize: 9 },
+        { text: entry.Issue, fontSize: 9 },
+        { text: entry.Expiry, fontSize: 9 },
+        { text: entry.Endorsements, fontSize: 9 }
+      ]);
+    }
+  }
+
+  const docDefinition = {
+    content: [
+      { text: 'Date of Index: ' + new Date().toLocaleDateString('en-GB'), alignment: 'right', margin: [0, 0, 0, 10] },
+      { text: 'Certificate Index', style: 'header' },
+      {
+        table: {
+          headerRows: 1,
+          widths: ['auto', '30%', '15%', 'auto', 'auto', '30%'],
+          body: tableBody
+        },
+        layout: {
+          hLineWidth: () => 0.5,
+          vLineWidth: () => 0.5,
+          paddingLeft: () => 4,
+          paddingRight: () => 4,
+          paddingTop: () => 2,
+          paddingBottom: () => 2
+        }
+      }
+    ],
+    defaultStyle: {
+      fontSize: 9
+    },
+    styles: {
+      header: {
+        fontSize: 16,
+        bold: true,
+        margin: [0, 0, 0, 10]
+      }
+    },
+    pageOrientation: 'portrait'
+  };
+
+  pdfMake.createPdf(docDefinition).download('Certificate_Index.pdf');
+});
+
+document.getElementById("showAllButton").addEventListener("click", () => {
+  const mainOnly = document.getElementById("mainOnlyToggle").checked;
+  const rows = Array.from(resultTable.rows).filter(row => !mainOnly || row.classList.contains("main-certificate"));
+  rows.forEach(row => {
+    row.style.display = "";
+    row.style.backgroundColor = "";
+    const titleSpan = row.querySelector(".file-title");
+    if (titleSpan) {
+      titleSpan.innerHTML = titleSpan.textContent; // remove <mark> tags
+    }
+  });
+  const sorted = rows.sort((a, b) => {
+    const aGroup = parseCertificateFilename(a.dataset.path).group;
+    const bGroup = parseCertificateFilename(b.dataset.path).group;
+    return aGroup.localeCompare(bGroup);
+  });
+  sorted.forEach(row => resultTable.appendChild(row));
+  document.getElementById("searchBox").value = "";
+});
+
+function getCertificateTitle(path, data) {
+  const { group, serial, title } = parseCertificateFilename(path);
+  return data.customTitle || `${group} ${serial} ${title}`;
+}
+
+function exportTextSummary() {
+  let summary = '';
+  for (const path in certificateData) {
+    const data = certificateData[path];
+    const title = getCertificateTitle(path, data);
+    summary += `Title: ${title}
+`;
+    summary += `  File: ${path}
+`;
+    summary += `  Issue: ${data.dateOfIssue || 'N/A'}
+`;
+    summary += `  Expiry: ${data.dateOfExpiry || 'N/A'}
+`;
+    summary += `  Endorsements: ${data.endorsementDates || 'N/A'}
+`;
+    summary += `  Certificate No: ${data.certificateNumber || 'N/A'}
+`;
+    summary += `  Issued By: ${data.issuedBy || 'N/A'}
+`;
+    summary += `  Place of Issue: ${data.placeOfIssue || 'N/A'}
+`;
+    summary += `
+`;
+  }
+
+  const blob = new Blob([summary], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'certificate_summary.txt';
+  a.click();
+}
+  
+async function saveJSON() {
+  if (!folderHandle) {
+    showToast("⚠️ No folder selected. Please reselect the folder.");
+    return;
+  }
+
+  try {
+    // 🔁 Get a *new* file handle every time — always discard cached jsonHandle
+    const freshHandle = await folderHandle.getFileHandle("certificates.json", { create: true });
+
+    // ✅ Request write permission directly from the user gesture context
+    let permission = await freshHandle.queryPermission({ mode: "readwrite" });
+    if (permission !== "granted") {
+      permission = await freshHandle.requestPermission({ mode: "readwrite" });
+      if (permission !== "granted") {
+        showToast("❌ Write permission denied.");
+        return;
+      }
+    }
+
+    // 💡 Ensure previous FileSystemWritableFileStream is closed before writing
+    const writable = await freshHandle.createWritable({ keepExistingData: true });
+    await writable.write(JSON.stringify(certificateData, null, 2));
+    await writable.close();
+
+    // Update global jsonHandle after success (if used elsewhere)
+    jsonHandle = freshHandle;
+
+    showToast("✔️ Changes saved to certificates.json.");
+  } catch (err) {
+    console.error("❌ Error saving JSON:", err);
+    showToast("❌ Failed to save changes.");
+  }
+}
+
+
+
+
+function normalizeText(str) {
+  return (str || "")
+    .toLowerCase()
+    .replace(/[\(\)\+\[\]]/g, '') // remove brackets and pluses
+    .replace(/\b(certificate|certificaat|certificat|cert|international|of|the|for|prevention)\b/g, '')
+    .replace(/[\W_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function isValidDate(str) {
+  const clean = normalizeDate(str);
+  const [d, m, y] = clean.split("-");
+  const date = new Date(`${y}-${m}-${d}`);
+  return (
+    !isNaN(date) &&
+    parseInt(d) <= 31 &&
+    parseInt(m) <= 12 &&
+    parseInt(y) >= 1900 &&
+    parseInt(y) <= 2100
+  );
+}
+
+function showSavePrompt() {
+  const prompt = document.getElementById("savePrompt");
+  prompt.classList.add("show");
+  document.getElementById("confirmSaveBtn").onclick = async () => {
+    prompt.classList.remove("show");
+    await saveJSON();
+  };
+}
+
+document.getElementById("helpButton").addEventListener("click", () => {
+  document.getElementById("helpModal").style.display = "block";
+});
+
+const STORAGE_KEY = 'certificates-folder';
+
+async function saveFolderHandleToStorage(handle) {
+  try {
+    await idbKeyval.set(STORAGE_KEY, handle);
+    console.log("💾 Folder handle saved to IndexedDB");
+  } catch (err) {
+    console.error("❌ Failed to save folder handle:", err);
+  }
+}
+
+async function saveFolderHandleToStorage(handle) {
+  const STORAGE_KEY = "certificate_folder_handle";
+
+  if (!window.isSecureContext || !("showDirectoryPicker" in window)) {
+    console.warn("⚠️ File System Access API not supported in this browser or context.");
+    return;
+  }
+
+  try {
+    const persisted = await navigator.storage.persist();
+    console.log("📦 Storage persistence granted:", persisted);
+
+    await idbKeyval.set(STORAGE_KEY, handle);
+    console.log("💾 Folder handle saved to IndexedDB");
+  } catch (e) {
+    console.error("❌ Failed to save folder handle to IndexedDB:", e);
+  }
+}
+
+async function loadFolderHandleFromStorage() {
+  const saved = await idbKeyval.get("folderHandle");
+  if (!saved) return null;
+
+  try {
+    const handle = await window.showDirectoryPicker(); // Force re-pick for validation
+    const perm = await handle.queryPermission({ mode: "readwrite" });
+    if (perm !== "granted") {
+      const req = await handle.requestPermission({ mode: "readwrite" });
+      if (req !== "granted") return null;
+    }
+    return handle;
+  } catch (err) {
+    console.warn("⚠️ Failed to reuse saved handle:", err);
+    return null;
+  }
+}
+
+if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("service-worker.js").then(() => {
+        console.log("✅ Service Worker registered.");
+      }).catch(err => {
+        console.warn("⚠️ Service Worker registration failed:", err);
+      });
+    });
+  }
+</script>
+
+  <div id="toast" class="toast"></div>
+</body>
+</html>
