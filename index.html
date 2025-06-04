@@ -189,7 +189,7 @@ C007 C007.00 IOPP, International Oil Pollution Prevention Certificate
   <script>
     alert("Please select the folder where all the original certificates are stored. The tool cannot start without it.");
     const pdfjsLib = window['pdfjs-dist/build/pdf'];
-    document.getElementById("copyTextButton").addEventListener("click", () => {
+document.getElementById("copyTextButton").addEventListener("click", () => {
   if (!window.latestTextExport) {
     showToast("No export summary available yet. Perform a match and export first.");
     return;
@@ -206,6 +206,61 @@ const certificateBundles = {
     "safety radio"
   ]
 };
+
+const certificateSynonyms = {
+  smc: "safety management",
+  doc: "document of compliance",
+  issc: "ship security",
+  iopp: "oil pollution",
+  iapp: "air pollution",
+  ispp: "sewage pollution",
+  ibwmc: "ballast water",
+  illc: "load line",
+  itc: "tonnage",
+  blc: "bunker liability",
+  clc: "civil liability",
+  bcc: "bunker convention",
+  reg: "registry",
+  register: "registry",
+  registry: "register",
+  class: "classification",
+  air: "air pollution",
+  sewage: "sewage pollution",
+  oil: "oil pollution",
+  pollution: "pollution"
+};
+
+function isValidDate(str) {
+  const clean = normalizeDate(str);
+  const [d, m, y] = clean.split("-");
+  const date = new Date(`${y}-${m}-${d}`);
+  return (
+    !isNaN(date) &&
+    parseInt(d) <= 31 &&
+    parseInt(m) <= 12 &&
+    parseInt(y) >= 1900 &&
+    parseInt(y) <= 2100
+  );
+}
+
+const STORAGE_KEY = "folderHandle";
+
+async function saveFolderHandleToStorage(handle) {
+  if (!window.isSecureContext || !("showDirectoryPicker" in window)) {
+    console.warn("⚠️ File System Access API not supported in this browser or context.");
+    return;
+  }
+
+  try {
+    const persisted = await navigator.storage.persist();
+    console.log("📦 Storage persistence granted:", persisted);
+
+    await idbKeyval.set(STORAGE_KEY, handle);
+    console.log("💾 Folder handle saved to IndexedDB");
+  } catch (e) {
+    console.error("❌ Failed to save folder handle to IndexedDB:", e);
+  }
+}
 
 function renderRow(path, data) {
   const row = resultTable.insertRow();
@@ -258,36 +313,6 @@ function renderRow(path, data) {
   span.setAttribute("data-title", displayTitle.toLowerCase());
   fileCell.appendChild(span);
 
-const certificateSynonyms = {
-  smc: "safety management",
-  doc: "document of compliance",
-  issc: "ship security",
-  iopp: "oil pollution",
-  iapp: "air pollution",
-  ispp: "sewage pollution",
-  ibwmc: "ballast water",
-  illc: "load line",
-  itc: "tonnage",
-  blc: "bunker liability",
-  clc: "civil liability",
-  bcc: "bunker convention",
-  reg: "registry",
-  register: "registry",
-  registry: "register",
-  class: "classification",
-  air: "air pollution",
-  sewage: "sewage pollution",
-  oil: "oil pollution",
-  pollution: "pollution"
-};
-
-const certificateBundles = {
-  "cargo ship safety": [
-    "safety construction",
-    "safety equipment",
-    "safety radio"
-  ]
-};
 
 // Build search metadata
 const baseTitle = displayTitle.toLowerCase();
@@ -508,30 +533,6 @@ function filterMainOnlyOnStartup() {
 }
 
 function expandWithSynonyms(text) {
-  const certificateSynonyms = {
-  smc: "safety management",
-  doc: "document of compliance",
-  issc: "ship security",
-  iopp: "oil pollution",
-  iapp: "air pollution",
-  ispp: "sewage pollution",
-  ibwmc: "ballast water",
-  illc: "load line",
-  itc: "tonnage",
-  blc: "bunker liability",
-  clc: "civil liability",
-  bcc: "bunker convention",
-  reg: "registry",
-  register: "registry",
-  registry: "register",
-  pollution: "pollution",
-  air: "air pollution",
-  sewage: "sewage pollution",
-  oil: "oil pollution",
-  class: "classification"
-};
-
-
   const expanded = new Set();
   const lower = text.toLowerCase();
 
@@ -1386,12 +1387,6 @@ if (issuerMatches.length > 0) {
   const foundDates = Array.from(fullText.matchAll(/\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}/g));
   console.log("🕵️ Dates found in document:", foundDates.map(m => m[0]));
 
-  function isValidDate(str) {
-    const clean = normalizeDate(str);
-    const [d, m, y] = clean.split("-");
-    const date = new Date(`${y}-${m}-${d}`);
-    return !isNaN(date) && parseInt(d) <= 31 && parseInt(m) <= 12 && parseInt(y) >= 1900 && parseInt(y) <= 2100;
-  }
 
   for (const match of foundDates) {
     const rawDate = match[0];
@@ -1729,18 +1724,6 @@ function normalizeText(str) {
     .replace(/\s+/g, ' ')
     .trim();
 }
-function isValidDate(str) {
-  const clean = normalizeDate(str);
-  const [d, m, y] = clean.split("-");
-  const date = new Date(`${y}-${m}-${d}`);
-  return (
-    !isNaN(date) &&
-    parseInt(d) <= 31 &&
-    parseInt(m) <= 12 &&
-    parseInt(y) >= 1900 &&
-    parseInt(y) <= 2100
-  );
-}
 
 function showSavePrompt() {
   const prompt = document.getElementById("savePrompt");
@@ -1755,35 +1738,6 @@ document.getElementById("helpButton").addEventListener("click", () => {
   document.getElementById("helpModal").style.display = "block";
 });
 
-const STORAGE_KEY = 'certificates-folder';
-
-async function saveFolderHandleToStorage(handle) {
-  try {
-    await idbKeyval.set(STORAGE_KEY, handle);
-    console.log("💾 Folder handle saved to IndexedDB");
-  } catch (err) {
-    console.error("❌ Failed to save folder handle:", err);
-  }
-}
-
-async function saveFolderHandleToStorage(handle) {
-  const STORAGE_KEY = "certificate_folder_handle";
-
-  if (!window.isSecureContext || !("showDirectoryPicker" in window)) {
-    console.warn("⚠️ File System Access API not supported in this browser or context.");
-    return;
-  }
-
-  try {
-    const persisted = await navigator.storage.persist();
-    console.log("📦 Storage persistence granted:", persisted);
-
-    await idbKeyval.set(STORAGE_KEY, handle);
-    console.log("💾 Folder handle saved to IndexedDB");
-  } catch (e) {
-    console.error("❌ Failed to save folder handle to IndexedDB:", e);
-  }
-}
 
 async function loadFolderHandleFromStorage() {
   const saved = await idbKeyval.get("folderHandle");
