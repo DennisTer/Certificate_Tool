@@ -691,7 +691,7 @@ cleanButton.onclick = async () => {
   if (!confirm(`This will remove ${toDelete.length} old entries from JSON. Proceed?`)) return;
   toDelete.forEach(k => delete certificateData[k]);
   if (jsonHandle) {
-    const writable = await jsonHandle.createWritable({ keepExistingData: true });
+    const writable = await jsonHandle.createWritable({ keepExistingData: false });
     await writable.write(JSON.stringify(certificateData, null, 2));
     await writable.close();
   }
@@ -1192,7 +1192,7 @@ async function processPDF(file, displayName) {
         placeOfIssue: ""
       };
       if (jsonHandle) {
-        const writable = await jsonHandle.createWritable({ keepExistingData: true });
+        const writable = await jsonHandle.createWritable({ keepExistingData: false });
         await writable.write(JSON.stringify(certificateData, null, 2));
         await writable.close();
       }
@@ -1414,7 +1414,7 @@ if (issuerMatches.length > 0) {
   };
 
   if (jsonHandle) {
-    const writable = await jsonHandle.createWritable({ keepExistingData: true });
+    const writable = await jsonHandle.createWritable({ keepExistingData: false });
     await writable.write(JSON.stringify(certificateData, null, 2));
     await writable.close();
   }
@@ -1640,7 +1640,7 @@ async function saveJSON() {
     }
 
     // 💡 Ensure previous FileSystemWritableFileStream is closed before writing
-    const writable = await freshHandle.createWritable({ keepExistingData: true });
+    const writable = await freshHandle.createWritable({ keepExistingData: false });
     await writable.write(JSON.stringify(certificateData, null, 2));
     await writable.close();
 
