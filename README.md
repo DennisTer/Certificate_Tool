@@ -99,15 +99,7 @@ Do not edit certificates.json outside the tool to prevent sync conflicts.
 
 Clear folder access via browser site settings if persistent issues occur.
 
-👨‍🔧 Future Improvements (Planned)
 
-Backup import/export system
-
-Bulk field editing
-
-Indexed certificate search optimization
-
-Better OCR tuning for low-quality scans
 
 © 2025 Dennis Terpstra
 
