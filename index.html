@@ -576,6 +576,7 @@ const words = lower
     let certificateData = {};
 let fileHandleMap = {};
 let jsonHandle = null;
+let folderHandle = null;
     let totalFiles = 0;
     let processedFiles = 0;
     let allRows = [];
@@ -602,9 +603,8 @@ await saveFolderHandleToStorage(dirHandle);
     alert("❌ Write permission to the folder is required.");
     return;
   }
-
-  window.directoryHandle = dirHandle;
   folderHandle = dirHandle;
+  window.folderHandle = folderHandle;
 
   try {
     // Try to open existing certificates.json
