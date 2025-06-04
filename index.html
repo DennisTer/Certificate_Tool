@@ -1033,32 +1033,6 @@ const fuseOptions = {
   });
 });
 
-
-function fuzzyMatchScore(a, b) {
-  if (!a || !b) return 0;
-  a = expandWithSynonyms(a);
-  b = expandWithSynonyms(b);
-  if (b.includes(a)) return 1;
-  let matches = 0;
-  for (let i = 0; i < a.length; i++) {
-    if (b.includes(a[i])) matches++;
-  }
-  return matches / a.length;
-}
-
-function refinedSimilarityScore(a, b) {
-  const aTerms = a.toLowerCase().split(/\s+/).filter(Boolean);
-  const bTerms = b.toLowerCase().split(/\s+/).filter(Boolean);
-  let matchCount = 0;
-  for (const term of aTerms) {
-    if (bTerms.includes(term)) matchCount++;
-  }
-  return aTerms.length ? matchCount / aTerms.length : 0;
-}
-
-
-
-
   async function collectFiles(directoryHandle, path, fileList, seenPaths = new Set()) {
   for await (const entry of directoryHandle.values()) {
     const entryPath = path + "/" + entry.name;
@@ -1498,13 +1472,6 @@ function parseCertificateFilename(path) {
 }
 
 
-function selectAllCertificates() {
-  document.querySelectorAll(".select-certificate").forEach(cb => cb.checked = true);
-}
-
-function deselectAllCertificates() {
-  document.querySelectorAll(".select-certificate").forEach(cb => cb.checked = false);
-}
 
 function toggleSelectAll(masterCheckbox) {
   const checkboxes = document.querySelectorAll('.select-certificate');
@@ -1645,37 +1612,6 @@ function getCertificateTitle(path, data) {
   return data.customTitle || `${group} ${serial} ${title}`;
 }
 
-function exportTextSummary() {
-  let summary = '';
-  for (const path in certificateData) {
-    const data = certificateData[path];
-    const title = getCertificateTitle(path, data);
-    summary += `Title: ${title}
-`;
-    summary += `  File: ${path}
-`;
-    summary += `  Issue: ${data.dateOfIssue || 'N/A'}
-`;
-    summary += `  Expiry: ${data.dateOfExpiry || 'N/A'}
-`;
-    summary += `  Endorsements: ${data.endorsementDates || 'N/A'}
-`;
-    summary += `  Certificate No: ${data.certificateNumber || 'N/A'}
-`;
-    summary += `  Issued By: ${data.issuedBy || 'N/A'}
-`;
-    summary += `  Place of Issue: ${data.placeOfIssue || 'N/A'}
-`;
-    summary += `
-`;
-  }
-
-  const blob = new Blob([summary], { type: 'text/plain' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'certificate_summary.txt';
-  a.click();
-}
   
 async function saveJSON() {
   if (!folderHandle) {
