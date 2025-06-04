@@ -99,7 +99,9 @@ Do not edit certificates.json outside the tool to prevent sync conflicts.
 
 Clear folder access via browser site settings if persistent issues occur.
 
-
+License
+-------
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 © 2025 Dennis Terpstra
 
