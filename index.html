@@ -1686,7 +1686,21 @@ async function loadFolderHandleFromStorage() {
   if (!saved) return null;
 
   try {
-    const handle = await window.showDirectoryPicker(); // Force re-pick for validation
+    // ✅ Query permission on the previously saved handle first
+    let perm = await saved.queryPermission({ mode: "readwrite" });
+    if (perm !== "granted") {
+      perm = await saved.requestPermission({ mode: "readwrite" });
+    }
+    if (perm === "granted") {
+      return saved;
+    }
+  } catch (err) {
+    console.warn("⚠️ Failed to validate saved handle:", err);
+  }
+
+  // ⬇️ Fallback to manual selection if permission denied or handle invalid
+  try {
+    const handle = await window.showDirectoryPicker();
     const perm = await handle.queryPermission({ mode: "readwrite" });
     if (perm !== "granted") {
       const req = await handle.requestPermission({ mode: "readwrite" });
@@ -1694,7 +1708,7 @@ async function loadFolderHandleFromStorage() {
     }
     return handle;
   } catch (err) {
-    console.warn("⚠️ Failed to reuse saved handle:", err);
+    console.warn("⚠️ Directory picker failed:", err);
     return null;
   }
 }
