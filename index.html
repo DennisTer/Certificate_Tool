@@ -405,7 +405,7 @@ editBtn.onclick = () => {
   expiryInput.value = data.dateOfExpiry || "";
   expiryInput.placeholder = "Check and enter manually";
   expiryInput.oninput = () => {
-  data.dateOfexpiry = expiryInput.value;
+  data.dateOfExpiry = expiryInput.value;
   showSavePrompt();
 };
   expiryCell.appendChild(expiryInput);
